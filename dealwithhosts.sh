@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SQLITEDB="/db/hostlistdb"
+SQLITEDB="/home/maksim/fabscripts/Hosts/hostlistdb"
 SQLITE="/usr/bin/sqlite3"
 OUTPUT="/tmp/hostlist.txt"
 [ -f "$OUTPUT" ] && cat /dev/null > $OUTPUT || touch $OUTPUT
@@ -8,8 +8,8 @@ SPOOLFILE="/tmp/spool.log"
 [ -f "$SPOOLFILE" ] && cat /dev/null > $SPOOLFILE
 JOBLOG="/tmp/joblog.log"
 
-export SCRIPTDIR="/home/.../Parallel/scripts/"
-export USERNAME="..."
+export SCRIPTDIR="/home/maksim/Parallel/scripts/"
+export USERNAME="maksimivanov"
 export SSHPATH="/usr/bin/ssh"
 export SCPPATH="/usr/bin/scp"
 export SSHOPTION="-4 -q -o ServerAliveCountMax=5 -o ServerAliveInterval=15 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
@@ -19,12 +19,13 @@ export WORKDIR="~"
 usage() {
 cat << __EOFF__
 Use: `basename $0` [options]...
+Where options are:
         -h|--help       This help
-        -m|--mean       (Required, with value) Shoud be one of: testing,www,...
+        -m|--mean       (Required, with value) Shoud be one of: testing,billing,raddb,bidb,eqmdb,www,billing_enforta
         -a|--attr	(Req., w. val) Shoud be one of: node1,node2,ufqdn;
 			-m|--mean & -a|--attr, if used, should be given both;
 			And they are mutual exclusive with -l|--list
-	-l|--list	(Req., w. val) List of fqdn; It's mutual exclusive with -m|--mean & -a|--attr
+	-l|--list	(Req., w. val) Comma-separated list of fqdn; It's mutual exclusive with -m|--mean & -a|--attr
 	-u|--user	(Optional w. val) OS-user, under who to do some at hosts;
 			If not given, `basename $0` will try to connect and work at remote host(s) under ${USERNAME};
 	-g|--group	(Opt., w. val) OS-group, supposed to be primary group of OS-user, whose name is setted by -u|--user
@@ -51,13 +52,12 @@ export -f copytorh
 gethostlist() {
 local v_mode="$1"
 local v_tmp=""
-local v_sql=""
 local v_rc=""
 
 case "$v_mode" in
- "list") v_sql="select name from hosts where name in (${v_list})"
+ "list") echo "Ok, list-mode"
          ;;
- "attribute") v_sql="select name from hosts where mean='${v_mean}' and attr='${v_attr}'"
+ "attribute") echo "Ok, attr-mode"
             ;;
  *) echo "gethostlist was called with empty arg-list"
     return 1
@@ -65,10 +65,12 @@ case "$v_mode" in
 esac
 
 #echo "$v_sql"
+if [ "$v_mode" == "attribute" ]
+then
 
 $SQLITE $SQLITEDB << __EOFF__ > $SPOOLFILE 2>&1
 .mode column
-select max(length(name))+2 as col from (${v_sql});
+select max(length(name))+2 as col from ( select name from hosts where mean='${v_mean}' and attr='${v_attr}' );
 .exit
 __EOFF__
 v_rc="$?"
@@ -85,14 +87,69 @@ then
  return 1
 fi
 
-v_sql=${v_sql}";"
 #$SQLITE $SQLITEDB << __EOFF__ | awk -v sshu=$USERNAME -v ssh=$SSHPATH -v ssho="$SSHOPTION" '{printf "%s %s %s@%s\n", ssh, ssho, sshu, gensub(/ +/, "", "g", $0);}' > $OUTPUT
 $SQLITE $SQLITEDB << __EOFF__ | awk '{printf "%s\n", gensub(/ +/, "", "g", $0);}' > $OUTPUT
 .mode column
 .width $v_tmp
-$v_sql
+select name from hosts where mean='${v_mean}' and attr='${v_attr}';
 .exit
 __EOFF__
+
+# end of "$v_mode" == "attribute"
+else
+ # "$v_mode" == "list"
+# echo "Debug1"
+# echo ${v_list[@]}
+# echo "Debug2"
+ v_unknown_hosts=()
+ v_known_hosts=()
+ for i in $(seq 0 $((${#v_list[@]} - 1)))
+ do
+  v_count=`$SQLITE $SQLITEDB "select count(*) from hosts where name='${v_list[${i}]}';" | tr -d [:cntrl:]`
+  echo "${v_list[${i}]} $v_count"
+  if [ "$v_count" -ne "1" ]
+  then
+   v_unknown_hosts[${#v_unknown_hosts[*]}]=${v_list[${i}]}
+  else
+   v_known_hosts[${#v_known_hosts[*]}]=${v_list[${i}]}
+  fi
+ done
+# echo "Debug3"
+# echo ${v_unknown_hosts[@]}
+# echo ${v_known_hosts[@]}
+# echo "Debug4"
+
+ if [ "${#v_unknown_hosts[*]}" -gt "0" ]
+ then
+  echo "Your list of fqdns contains unknown fqdn:"
+  for i in $(seq 0 $((${#v_unknown_hosts[@]} - 1)))
+  do
+    echo ${v_unknown_hosts[${i}]}
+  done
+   read -p "Wold you like to continue with (1) or without (2) unknown fqdns, or stop this program (any other value)?" v_answer
+   case "$v_answer" in
+    1) echo "Answer is ${v_answer}, ok try to process your list as is"
+       ;;
+    2) echo "Answer is ${v_answer}, ok unknown fqdn(s) will be leaved out"
+       v_list=()
+       for i in $(seq 0 $((${#v_known_hosts[@]} - 1)))
+       do
+        v_list[${#v_list[*]}]=${v_known_hosts[${i}]}
+       done
+       ;;
+    *) echo "Answer is \"${v_answer}\", ok good luck;"
+       exit 1
+       ;;
+   esac
+   echo "list: ${v_list}"
+ fi
+
+ cat /dev/null > $OUTPUT
+ for i in $(seq 0 $((${#v_list[@]} - 1)))
+ do
+  echo "${v_list[${i}]}" >> $OUTPUT
+ done
+fi
 
 return 0
 
@@ -200,7 +257,7 @@ fi
 if [ -z "$v_list" ]
 then
 
- if [[ ! "$v_mean" =~ testing|www|... ]]
+ if [[ ! "$v_mean" =~ testing|billing|raddb|bidb|eqmdb|www|billing_enforta ]]
  then
   echo "value for -m|--mean option is incorrect;"
   exit 1
@@ -221,19 +278,8 @@ then
 
 else
 # That is: if v_list isn't empty
- v_list=(${v_list//,/ })
-v_tmp=""
-for i in $(seq 0 $((${#v_list[@]} - 1)))
-do
- if [ -z "$v_tmp" ]
- then
-  v_tmp="'"${v_list[$i]}"'"
- else
-  v_tmp=${v_tmp}",'"${v_list[$i]}"'"
- fi
-done
-v_list=${v_tmp}
-v_tmp=""
+v_list=(${v_list//,/ })
+v_list=( $(echo -n ${v_list[@]} | tr ' ' '\n' | sort -u |  tr '\n' ' ' ) )
 
  gethostlist "list"
  if [ "$?" -ne "0" ] 
