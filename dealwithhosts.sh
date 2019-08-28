@@ -26,6 +26,7 @@ Where options are:
 			-m|--mean & -a|--attr, if used, should be given both;
 			And they are mutual exclusive with -l|--list
 	-l|--list	(Req., w. val) Comma-separated list of fqdn; It's mutual exclusive with -m|--mean & -a|--attr
+	-f|--force	(Opt. wo value) force to use list of fqdn as it given to the `basename $0`;
 	-u|--user	(Optional w. val) OS-user, under who to do some at hosts;
 			If not given, `basename $0` will try to connect and work at remote host(s) under ${USERNAME};
 	-g|--group	(Opt., w. val) OS-group, supposed to be primary group of OS-user, whose name is setted by -u|--user
@@ -55,9 +56,9 @@ local v_tmp=""
 local v_rc=""
 
 case "$v_mode" in
- "list") echo "Ok, list-mode"
+ "list") #echo "Ok, list-mode"
          ;;
- "attribute") echo "Ok, attr-mode"
+ "attribute") #echo "Ok, attr-mode"
             ;;
  *) echo "gethostlist was called with empty arg-list"
     return 1
@@ -106,7 +107,7 @@ else
  for i in $(seq 0 $((${#v_list[@]} - 1)))
  do
   v_count=`$SQLITE $SQLITEDB "select count(*) from hosts where name='${v_list[${i}]}';" | tr -d [:cntrl:]`
-  echo "${v_list[${i}]} $v_count"
+  #echo "${v_list[${i}]} $v_count"
   if [ "$v_count" -ne "1" ]
   then
    v_unknown_hosts[${#v_unknown_hosts[*]}]=${v_list[${i}]}
@@ -119,7 +120,7 @@ else
 # echo ${v_known_hosts[@]}
 # echo "Debug4"
 
- if [ "${#v_unknown_hosts[*]}" -gt "0" ]
+ if [ "${#v_unknown_hosts[*]}" -gt "0" -a "$v_force" -eq "0" ]
  then
   echo "Your list of fqdns contains unknown fqdn:"
   for i in $(seq 0 $((${#v_unknown_hosts[@]} - 1)))
@@ -141,9 +142,9 @@ else
        exit 1
        ;;
    esac
-   echo "list: ${v_list}"
  fi
 
+# echo "list: ${v_list}"
  cat /dev/null > $OUTPUT
  for i in $(seq 0 $((${#v_list[@]} - 1)))
  do
@@ -187,8 +188,9 @@ v_group=""
 v_dryrun="0"
 v_dop="2"
 v_what="shell"
+v_force="0"
 
-options=$(getopt -o dhm:a:l:u:g:p:w: -l help,mean:,attr:,list:,user:,group:,dop:,what: -- "$@")
+options=$(getopt -o dhm:a:l:u:g:p:w:f -l help,mean:,attr:,list:,user:,group:,dop:,what:,force -- "$@")
 eval set -- "$options"
 while [ ! -z "$1" ]
 do
@@ -203,6 +205,8 @@ do
             ;;
   -d|--dryrun) v_dryrun="1"
                ;;
+  -f|--force) v_force="1"
+              ;;
   -u|--user) shift
              v_user="$1"
              ;;
