@@ -1,5 +1,8 @@
 whenever sqlerror exit failure
-whenever oserror exit failure
+-- 2216771.1 ---------------------
+-- O/S Message: No child processes
+--whenever oserror exit failure
+--------------------------------------
 conn / as sysdba
 set echo off
 set feedback off
